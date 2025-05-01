@@ -1,4 +1,18 @@
+# Игнорируем файл с переменными окружения
 .env
+
+# Игнорируем файл с учетными данными Google
 credentials.json
+google-creds.json
+
+# Игнорируем скомпилированные файлы Python
 __pycache__/
 *.pyc
+
+# Игнорируем настройки IDE
+.idea/
+.vscode/
+
+# Прочее
+*.log
+.DS_Store
