@@ -1,4 +1,5 @@
-aiogram
+aiogram==2.25.1
 python-dotenv
 gspread
 oauth2client
+
