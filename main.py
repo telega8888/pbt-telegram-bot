@@ -26,17 +26,25 @@ dp      = Dispatcher(bot, storage=storage)
 
 # ——— Google Sheets setup ——————————————————————————
 def init_gspread():
-    # restore real newlines
-    raw = GOOGLE_CREDS_JSON.replace("\\n", "\n")
-    creds_dict = json.loads(raw)
+    # 1. Считаем экранированный JSON из переменной окружения
+    raw = os.getenv("GOOGLE_CREDS_JSON")
+    if not raw:
+        raise RuntimeError("GOOGLE_CREDS_JSON not set")
 
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
+    # 2. Заменяем в нём все двойные слэши-n (\\n) на реальные переводы строк (\n)
+    fixed = raw.replace("\\n", "\n")
+
+    # 3. Парсим строку в Python-словарь
+    creds_dict = json.loads(fixed)
+
+    # 4. Авторизуемся в Google Sheets
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds  = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
+
+    # 5. Открываем твой лист по имени
     return client.open(SPREADSHEET_NAME).sheet1
+
 
 sheet = init_gspread()
 
