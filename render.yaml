@@ -1,7 +1,13 @@
 services:
   - type: web
-    name: pbt-telegram-bot
+    name: pbt-survey-bot
     env: python
     buildCommand: ""
     startCommand: python main.py
-    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GOOGLE_CREDS_JSON
+        sync: false
+      - key: SPREADSHEET_NAME
+        sync: false
