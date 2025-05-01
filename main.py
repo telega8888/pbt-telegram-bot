@@ -22,14 +22,23 @@ storage = MemoryStorage()
 dp      = Dispatcher(bot, storage=storage)
 
 def init_gspread():
-    raw = os.getenv("GOOGLE_CREDS_JSON")
-    creds_dict = json.loads(raw)
-    creds  = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, [
+    b64 = os.getenv("GOOGLE_CREDS_B64")
+    if not b64:
+        raise RuntimeError("GOOGLE_CREDS_B64 not set")
+
+    # 1) Decode Base64 → original JSON text
+    raw_json = base64.b64decode(b64).decode("utf-8")
+    # 2) Parse JSON → dict
+    creds_dict = json.loads(raw_json)
+
+    scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
-    ])
+    ]
+    creds  = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     return client.open(SPREADSHEET_NAME).sheet1
+
 
 sheet = init_gspread()
 
