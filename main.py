@@ -1,95 +1,111 @@
-import logging
-import json
 import os
+import json
+import logging
 import gspread
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.dispatcher import FSMContext
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher.filters.state import State, StatesGroup
 from oauth2client.service_account import ServiceAccountCredentials
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 
-# Включаем логирование
+# ——— Logging ——————————————————————————————————————
 logging.basicConfig(level=logging.INFO)
 
-# Получаем переменные окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
+# ——— Environment ——————————————————————————————————
+BOT_TOKEN          = os.getenv("BOT_TOKEN")
+GOOGLE_CREDS_JSON  = os.getenv("GOOGLE_CREDS_JSON")
+SPREADSHEET_NAME   = os.getenv("SPREADSHEET_NAME")
 
-# Проверка наличия переменных окружения
-if not BOT_TOKEN or not GOOGLE_CREDS_JSON:
-    raise ValueError("Переменные окружения BOT_TOKEN и GOOGLE_CREDS_JSON обязательны.")
+if not BOT_TOKEN or not GOOGLE_CREDS_JSON or not SPREADSHEET_NAME:
+    raise RuntimeError("Required env vars: BOT_TOKEN, GOOGLE_CREDS_JSON, SPREADSHEET_NAME")
 
-# Инициализация бота и диспетчера
-bot = Bot(token=BOT_TOKEN)
+# ——— Telegram bot setup ————————————————————————————
+bot     = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+dp      = Dispatcher(bot, storage=storage)
 
-# Настройка доступа к Google Таблице
+# ——— Google Sheets setup ——————————————————————————
 def init_gspread():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds_dict = json.loads(GOOGLE_CREDS_JSON)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    # restore real newlines
+    raw = GOOGLE_CREDS_JSON.replace("\\n", "\n")
+    creds_dict = json.loads(raw)
+
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds  = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    sheet = client.open("PBTEndorsements").sheet1
-    return sheet
+    return client.open(SPREADSHEET_NAME).sheet1
 
 sheet = init_gspread()
 
-# Состояния анкеты
-class Form(StatesGroup):
-    name = State()
-    surname = State()
-    email = State()
-    country = State()
-    city = State()
+# ——— Survey states —————————————————————————————
+class Survey(StatesGroup):
+    first_name = State()
+    last_name  = State()
+    email      = State()
+    country    = State()
+    city       = State()
 
-# Старт команды
-@dp.message_handler(commands="start")
-async def start_form(message: types.Message):
-    await message.answer("Привет! Давай начнем. Как тебя зовут?")
-    await Form.name.set()
+# ——— /start ——————————————————————————————————————
+@dp.message_handler(commands="start", state="*")
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.finish()
+    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
+    await Survey.first_name.set()
 
-@dp.message_handler(state=Form.name)
-async def process_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("А фамилия?")
-    await Form.surname.set()
+# ——— First Name ——————————————————————————————————
+@dp.message_handler(state=Survey.first_name)
+async def process_first_name(message: types.Message, state: FSMContext):
+    await state.update_data(first_name=message.text)
+    await message.answer("Last Name:")
+    await Survey.last_name.set()
 
-@dp.message_handler(state=Form.surname)
-async def process_surname(message: types.Message, state: FSMContext):
-    await state.update_data(surname=message.text)
-    await message.answer("Укажи свой email:")
-    await Form.email.set()
+# ——— Last Name ———————————————————————————————————
+@dp.message_handler(state=Survey.last_name)
+async def process_last_name(message: types.Message, state: FSMContext):
+    await state.update_data(last_name=message.text)
+    await message.answer("Email:")
+    await Survey.email.set()
 
-@dp.message_handler(state=Form.email)
+# ——— Email —————————————————————————————————————
+@dp.message_handler(state=Survey.email)
 async def process_email(message: types.Message, state: FSMContext):
     await state.update_data(email=message.text)
-    await message.answer("Из какой ты страны?")
-    await Form.country.set()
+    await message.answer("Country:")
+    await Survey.country.set()
 
-@dp.message_handler(state=Form.country)
+# ——— Country ————————————————————————————————————
+@dp.message_handler(state=Survey.country)
 async def process_country(message: types.Message, state: FSMContext):
     await state.update_data(country=message.text)
-    await message.answer("Из какого города?")
-    await Form.city.set()
+    await message.answer("City:")
+    await Survey.city.set()
 
-@dp.message_handler(state=Form.city)
+# ——— City & Submit —————————————————————————————
+@dp.message_handler(state=Survey.city)
 async def process_city(message: types.Message, state: FSMContext):
     await state.update_data(city=message.text)
     data = await state.get_data()
 
-    # Добавляем строку в таблицу
-    sheet.append_row([
-        data["name"],
-        data["surname"],
+    row = [
+        data["first_name"],
+        data["last_name"],
         data["email"],
         data["country"],
         data["city"]
-    ])
+    ]
+    sheet.append_row(row)
 
-    await message.answer("Спасибо! Ты поддержал инициативу Plant Based Treaty 🌱")
+    await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
     await state.finish()
 
-# Запуск бота
+# ——— Fallback ————————————————————————————————————
+@dp.message_handler()
+async def fallback(message: types.Message):
+    await message.reply("Please send /start to begin.")
+
+# ——— Entrypoint ———————————————————————————————————
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
