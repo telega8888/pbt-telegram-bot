@@ -1,5 +1,7 @@
 import logging
 import os
+import json
+from io import StringIO
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -14,7 +16,7 @@ dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path)
 
 API_TOKEN = os.getenv('TELEGRAM_TOKEN')
-GOOGLE_CREDS_JSON = os.getenv('GOOGLE_CREDS_JSON_PATH')  # путь к JSON-файлу ключей сервисного аккаунта
+GOOGLE_CREDS_JSON = os.getenv('GOOGLE_CREDS_JSON')  # JSON-строка с ключами сервисного аккаунта
 SPREADSHEET_NAME = 'PBTEndorsements'
 
 # Configure logging
@@ -28,7 +30,8 @@ dp = Dispatcher(bot, storage=storage)
 # Google Sheets setup
 def init_gspread():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDS_JSON, scope)
+    json_creds = json.loads(GOOGLE_CREDS_JSON)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(json_creds, scope)
     client = gspread.authorize(creds)
     sheet = client.open(SPREADSHEET_NAME).sheet1
     return sheet
@@ -109,7 +112,7 @@ async def process_subscribe(callback_query: types.CallbackQuery, state: FSMConte
     sheet.append_row(row)
 
     # Thank you message
-    await bot.send_message(callback_query.from_user.id, 'Thank you for endorsing the Plant Based Treaty! \u2705')
+    await bot.send_message(callback_query.from_user.id, 'Thank you for endorsing the Plant Based Treaty! ✅')
     await state.finish()
 
 # Fallback
