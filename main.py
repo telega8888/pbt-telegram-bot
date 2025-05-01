@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import logging
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -8,27 +9,26 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
+# ——— Logging ——————————————————————————————————————
 logging.basicConfig(level=logging.INFO)
 
+# ——— Environment ——————————————————————————————————
 BOT_TOKEN        = os.getenv("BOT_TOKEN")
-GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
+CREDS_B64        = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
 
-if not BOT_TOKEN or not GOOGLE_CREDS_JSON or not SPREADSHEET_NAME:
-    raise RuntimeError("Env vars BOT_TOKEN, GOOGLE_CREDS_JSON, SPREADSHEET_NAME required")
+if not BOT_TOKEN or not CREDS_B64 or not SPREADSHEET_NAME:
+    raise RuntimeError("Env vars BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME required")
 
+# ——— Telegram setup ——————————————————————————————
 bot     = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp      = Dispatcher(bot, storage=storage)
 
+# ——— Google Sheets init —————————————————————————
 def init_gspread():
-    b64 = os.getenv("GOOGLE_CREDS_B64")
-    if not b64:
-        raise RuntimeError("GOOGLE_CREDS_B64 not set")
-
-    # 1) Decode Base64 → original JSON text
-    raw_json = base64.b64decode(b64).decode("utf-8")
-    # 2) Parse JSON → dict
+    # Decode the Base64-encoded JSON credentials
+    raw_json = base64.b64decode(CREDS_B64).decode("utf-8")
     creds_dict = json.loads(raw_json)
 
     scope = [
@@ -39,9 +39,9 @@ def init_gspread():
     client = gspread.authorize(creds)
     return client.open(SPREADSHEET_NAME).sheet1
 
-
 sheet = init_gspread()
 
+# ——— Survey states —————————————————————————————
 class Survey(StatesGroup):
     first_name = State()
     last_name  = State()
@@ -49,6 +49,7 @@ class Survey(StatesGroup):
     country    = State()
     city       = State()
 
+# ——— Handlers ————————————————————————————————————
 @dp.message_handler(commands="start", state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()
@@ -83,7 +84,13 @@ async def process_country(message: types.Message, state: FSMContext):
 async def process_city(message: types.Message, state: FSMContext):
     await state.update_data(city=message.text)
     data = await state.get_data()
-    row = [data["first_name"], data["last_name"], data["email"], data["country"], data["city"]]
+    row = [
+        data["first_name"],
+        data["last_name"],
+        data["email"],
+        data["country"],
+        data["city"]
+    ]
     sheet.append_row(row)
     await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
     await state.finish()
@@ -92,5 +99,6 @@ async def process_city(message: types.Message, state: FSMContext):
 async def fallback(message: types.Message):
     await message.reply("Please send /start to begin.")
 
+# ——— Entrypoint ——————————————————————————————
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
