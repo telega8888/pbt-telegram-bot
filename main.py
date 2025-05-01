@@ -1,4 +1,3 @@
-
 import logging
 import json
 import os
@@ -31,7 +30,7 @@ def init_gspread():
     creds_dict = json.loads(GOOGLE_CREDS_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    sheet = client.open("PBT Individual Support").sheet1
+    sheet = client.open("PBTEndorsements").sheet1  # Используем ваше название таблицы
     return sheet
 
 sheet = init_gspread()
@@ -71,7 +70,7 @@ async def process_email(message: types.Message, state: FSMContext):
 @dp.message_handler(state=Form.country)
 async def process_country(message: types.Message, state: FSMContext):
     await state.update_data(country=message.text)
-    await message.answer("из какого города:")
+    await message.answer("Из какого ты города?")
     await Form.message.set()
 
 @dp.message_handler(state=Form.message)
@@ -88,7 +87,7 @@ async def process_message(message: types.Message, state: FSMContext):
         data["message"]
     ])
 
-    await message.answer("Thank you for endorsing the Plant Based Treaty!")
+    await message.answer("Спасибо! Ты поддержал инициативу Plant Based Treaty!")
     await state.finish()
 
 # Запуск
