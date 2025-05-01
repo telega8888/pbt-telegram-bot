@@ -11,11 +11,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 # Включаем логирование
 logging.basicConfig(level=logging.INFO)
 
-# Настройки
+# Получаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
-# Проверка переменных окружения
+# Проверка наличия переменных окружения
 if not BOT_TOKEN or not GOOGLE_CREDS_JSON:
     raise ValueError("Переменные окружения BOT_TOKEN и GOOGLE_CREDS_JSON обязательны.")
 
@@ -24,26 +24,26 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# Настройка доступа к Google Sheets
+# Настройка доступа к Google Таблице
 def init_gspread():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds_dict = json.loads(GOOGLE_CREDS_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    sheet = client.open("PBTEndorsements").sheet1  # Используем ваше название таблицы
+    sheet = client.open("PBTEndorsements").sheet1
     return sheet
 
 sheet = init_gspread()
 
-# Определение состояний
+# Состояния анкеты
 class Form(StatesGroup):
     name = State()
     surname = State()
     email = State()
     country = State()
-    message = State()
+    city = State()
 
-# Старт
+# Старт команды
 @dp.message_handler(commands="start")
 async def start_form(message: types.Message):
     await message.answer("Привет! Давай начнем. Как тебя зовут?")
@@ -70,26 +70,26 @@ async def process_email(message: types.Message, state: FSMContext):
 @dp.message_handler(state=Form.country)
 async def process_country(message: types.Message, state: FSMContext):
     await state.update_data(country=message.text)
-    await message.answer("Из какого ты города?")
-    await Form.message.set()
+    await message.answer("Из какого города?")
+    await Form.city.set()
 
-@dp.message_handler(state=Form.message)
-async def process_message(message: types.Message, state: FSMContext):
-    await state.update_data(message=message.text)
+@dp.message_handler(state=Form.city)
+async def process_city(message: types.Message, state: FSMContext):
+    await state.update_data(city=message.text)
     data = await state.get_data()
 
-    # Сохраняем в таблицу
+    # Добавляем строку в таблицу
     sheet.append_row([
         data["name"],
         data["surname"],
         data["email"],
         data["country"],
-        data["message"]
+        data["city"]
     ])
 
-    await message.answer("Спасибо! Ты поддержал инициативу Plant Based Treaty!")
+    await message.answer("Спасибо! Ты поддержал инициативу Plant Based Treaty 🌱")
     await state.finish()
 
-# Запуск
+# Запуск бота
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
