@@ -83,8 +83,17 @@ async def process_city(message: types.Message, state: FSMContext):
     await state.update_data(city=message.text)
     data = await state.get_data()
     row = [data["first_name"], data["last_name"], data["email"], data["country"], data["city"]]
-    sheet.append_row(row)
-    await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
+    logging.info(f"Appending row to sheet: {row}")
+
+    try:
+        sheet.append_row(row)
+        logging.info("Survey finished successfully")
+        await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
+    except Exception as e:
+        logging.error(f"Failed to write to sheet: {e}")
+        await message.answer("There was an error saving your response. Please try again later.")
+        return
+
     await state.finish()
 
 @dp.message_handler()
