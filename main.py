@@ -63,7 +63,7 @@ async def process_first_name(message: types.Message, state: FSMContext):
     logging.info(f"Received first name: {message.text}")
     await state.update_data(first_name=message.text)
     await message.answer("Last Name:")
-    logging.info("Prompted last name to user"))
+    logging.info("Prompted last name to user")
     await Survey.last_name.set()
 
 @dp.message_handler(state=Survey.last_name)
