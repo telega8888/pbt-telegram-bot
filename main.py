@@ -3,6 +3,7 @@ import json
 import logging
 import base64
 import gspread
+import asyncio
 from aiohttp import web
 from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types
@@ -110,11 +111,13 @@ async def fallback(message: types.Message):
 
 # Webhook Setup
 async def on_startup(app):
+    logging.info("Waiting before setting webhook...")
+    await asyncio.sleep(2)
     logging.info("Setting webhook with drop_pending_updates...")
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
 async def on_shutdown(app):
-    logging.warning("Shutting down..")
+    logging.warning("Shutting down..");
     await bot.delete_webhook()
     await dp.storage.close()
     await dp.storage.wait_closed()
