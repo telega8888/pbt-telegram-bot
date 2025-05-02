@@ -55,7 +55,10 @@ class Survey(StatesGroup):
 async def cmd_start(message: types.Message, state: FSMContext):
     logging.info(f"/start received from user {message.from_user.id}")
     await state.finish()
-    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:")
+    # Send greeting and first question
+    await message.answer("Welcome! Let's endorse the Plant Based Treaty.
+First Name:")
+    logging.info("Prompted first name to user")
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
