@@ -9,7 +9,6 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.utils.executor import set_webhook
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,6 +20,7 @@ WEBHOOK_URL       = os.getenv("WEBHOOK_URL")
 if not BOT_TOKEN or not GOOGLE_CREDS_B64 or not SPREADSHEET_NAME or not WEBHOOK_URL:
     raise RuntimeError("Required environment variables: BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL")
 
+# Initialize bot and dispatcher
 bot     = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp      = Dispatcher(bot, storage=storage)
@@ -48,7 +48,7 @@ class Survey(StatesGroup):
     city       = State()
 
 # Handlers
-@dp.message_handler(commands="start", state="*")
+@dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     logging.info(f"/start received from user {message.from_user.id}")
     await state.finish()
@@ -110,8 +110,8 @@ async def fallback(message: types.Message):
 
 # Webhook Setup
 async def on_startup(app):
-    logging.info("Setting webhook...")
-    await bot.set_webhook(WEBHOOK_URL)
+    logging.info("Setting webhook with drop_pending_updates...")
+    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
 async def on_shutdown(app):
     logging.warning("Shutting down..")
