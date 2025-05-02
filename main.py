@@ -50,38 +50,45 @@ class Survey(StatesGroup):
 # Handlers
 @dp.message_handler(commands="start", state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
+    logging.info(f"/start received from user {message.from_user.id}")
     await state.finish()
     await message.answer("Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:")
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
 async def process_first_name(message: types.Message, state: FSMContext):
+    logging.info(f"Received first name: {message.text}")
     await state.update_data(first_name=message.text)
     await message.answer("Last Name:")
     await Survey.last_name.set()
 
 @dp.message_handler(state=Survey.last_name)
 async def process_last_name(message: types.Message, state: FSMContext):
+    logging.info(f"Received last name: {message.text}")
     await state.update_data(last_name=message.text)
     await message.answer("Email:")
     await Survey.email.set()
 
 @dp.message_handler(state=Survey.email)
 async def process_email(message: types.Message, state: FSMContext):
+    logging.info(f"Received email: {message.text}")
     await state.update_data(email=message.text)
     await message.answer("Country:")
     await Survey.country.set()
 
 @dp.message_handler(state=Survey.country)
 async def process_country(message: types.Message, state: FSMContext):
+    logging.info(f"Received country: {message.text}")
     await state.update_data(country=message.text)
     await message.answer("City:")
     await Survey.city.set()
 
 @dp.message_handler(state=Survey.city)
 async def process_city(message: types.Message, state: FSMContext):
+    logging.info(f"Received city: {message.text}")
     await state.update_data(city=message.text)
     data = await state.get_data()
+    logging.info(f"Collected data: {data}")
     row = [data["first_name"], data["last_name"], data["email"], data["country"], data["city"]]
     logging.info(f"Appending row to sheet: {row}")
 
@@ -98,10 +105,12 @@ async def process_city(message: types.Message, state: FSMContext):
 
 @dp.message_handler()
 async def fallback(message: types.Message):
+    logging.info(f"Fallback message from {message.from_user.id}: {message.text}")
     await message.reply("Please send /start to begin.")
 
 # Webhook Setup
 async def on_startup(app):
+    logging.info("Setting webhook...")
     await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(app):
@@ -112,10 +121,15 @@ async def on_shutdown(app):
     logging.warning("Bye!")
 
 async def handle_webhook(request):
-    Bot.set_current(bot)             # Ensure bot is in context
-    Dispatcher.set_current(dp)      # Ensure dispatcher is in context
-    update = types.Update(**await request.json())
-    await dp.process_update(update)
+    try:
+        Bot.set_current(bot)
+        Dispatcher.set_current(dp)
+        update_json = await request.json()
+        logging.info(f"Received update: {json.dumps(update_json)}")
+        update = types.Update(**update_json)
+        await dp.process_update(update)
+    except Exception as e:
+        logging.error(f"Failed to process update: {e}")
     return web.Response()
 
 app = web.Application()
