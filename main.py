@@ -2,30 +2,31 @@ import os
 import json
 import logging
 import base64
-
 import gspread
+from aiohttp import web
 from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiohttp import web
+from aiogram.utils.executor import set_webhook
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN         = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64  = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME  = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL       = os.getenv("WEBHOOK_URL")  # Добавь в Render переменную с URL
-PORT              = int(os.environ.get("PORT", 8080))
+WEBHOOK_URL       = os.getenv("WEBHOOK_URL")
+
+if not BOT_TOKEN or not GOOGLE_CREDS_B64 or not SPREADSHEET_NAME or not WEBHOOK_URL:
+    raise RuntimeError("Required environment variables: BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL")
 
 bot     = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp      = Dispatcher(bot, storage=storage)
 
+# GSpread Init
 def init_gspread():
-    if not GOOGLE_CREDS_B64:
-        raise RuntimeError("GOOGLE_CREDS_B64 not set")
     raw_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
     creds_dict = json.loads(raw_json)
     scope = [
@@ -38,6 +39,7 @@ def init_gspread():
 
 sheet = init_gspread()
 
+# States
 class Survey(StatesGroup):
     first_name = State()
     last_name  = State()
@@ -45,6 +47,7 @@ class Survey(StatesGroup):
     country    = State()
     city       = State()
 
+# Handlers
 @dp.message_handler(commands="start", state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()
@@ -88,22 +91,24 @@ async def process_city(message: types.Message, state: FSMContext):
 async def fallback(message: types.Message):
     await message.reply("Please send /start to begin.")
 
+# Webhook Setup
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(app):
+    logging.warning("Shutting down..")
     await bot.delete_webhook()
+    await dp.storage.close()
+    await dp.storage.wait_closed()
+    logging.warning("Bye!")
 
 async def handle_webhook(request):
-    body = await request.read()
-    update = types.Update.de_json(body.decode("utf-8"))
+    update = types.Update(**await request.json())
     await dp.process_update(update)
     return web.Response()
 
 app = web.Application()
-app.router.add_post("/", handle_webhook)
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
+app.router.add_post("/webhook", handle_webhook)
 
 if __name__ == "__main__":
-    web.run_app(app, port=PORT)
+    web.run_app(app, host="0.0.0.0", port=10000, on_startup=[on_startup], on_shutdown=[on_shutdown])
