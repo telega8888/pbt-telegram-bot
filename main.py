@@ -23,8 +23,10 @@ if not BOT_TOKEN or not GOOGLE_CREDS_B64 or not SPREADSHEET_NAME or not WEBHOOK_
 
 # Initialize bot and dispatcher
 bot     = Bot(token=BOT_TOKEN)
+Bot.set_current(bot)
 storage = MemoryStorage()
 dp      = Dispatcher(bot, storage=storage)
+Dispatcher.set_current(dp)
 
 # GSpread Init
 def init_gspread():
