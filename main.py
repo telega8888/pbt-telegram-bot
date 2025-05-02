@@ -110,5 +110,9 @@ async def handle_webhook(request):
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
 
+# Регистрация событий
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
+
 if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=10000, on_startup=[on_startup], on_shutdown=[on_shutdown])
+    web.run_app(app, host="0.0.0.0", port=10000)
