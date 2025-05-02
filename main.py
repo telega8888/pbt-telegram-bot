@@ -56,8 +56,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     logging.info(f"/start received from user {message.from_user.id}")
     await state.finish()
     # Send greeting and first question
-    await message.answer("Welcome! Let's endorse the Plant Based Treaty.
-First Name:")
+    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:")
     logging.info("Prompted first name to user")
     await Survey.first_name.set()
 
@@ -123,7 +122,7 @@ async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
 async def on_shutdown(app):
-    logging.warning("Shutting down..");
+    logging.warning("Shutting down..")
     await bot.delete_webhook()
     await dp.storage.close()
     await dp.storage.wait_closed()
