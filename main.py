@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.utils.executor import set_webhook
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,12 +21,9 @@ WEBHOOK_URL       = os.getenv("WEBHOOK_URL")
 if not BOT_TOKEN or not GOOGLE_CREDS_B64 or not SPREADSHEET_NAME or not WEBHOOK_URL:
     raise RuntimeError("Required environment variables: BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL")
 
-# Initialize bot and dispatcher
 bot     = Bot(token=BOT_TOKEN)
-Bot.set_current(bot)
 storage = MemoryStorage()
 dp      = Dispatcher(bot, storage=storage)
-Dispatcher.set_current(dp)
 
 # GSpread Init
 def init_gspread():
@@ -105,6 +103,8 @@ async def on_shutdown(app):
     logging.warning("Bye!")
 
 async def handle_webhook(request):
+    Bot.set_current(bot)             # Ensure bot is in context
+    Dispatcher.set_current(dp)      # Ensure dispatcher is in context
     update = types.Update(**await request.json())
     await dp.process_update(update)
     return web.Response()
