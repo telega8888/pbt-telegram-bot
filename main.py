@@ -55,10 +55,15 @@ class Survey(StatesGroup):
 async def cmd_start(message: types.Message, state: FSMContext):
     logging.info(f"/start received from user {message.from_user.id}")
     await state.finish()
-    # Send greeting and first question
-    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:")
-    logging.info("Prompted first name to user")
+    try:
+        await message.answer(
+            "Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:"
+        )
+        logging.info("Welcome message sent successfully")
+    except Exception as e:
+        logging.error(f"Failed to send welcome message: {e}")
     await Survey.first_name.set()
+
 
 @dp.message_handler(state=Survey.first_name)
 async def process_first_name(message: types.Message, state: FSMContext):
