@@ -1,156 +1,105 @@
-import os
-import json
-import logging
-import base64
-import gspread
-import asyncio
-from aiohttp import web
-from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.types import Message
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiohttp import web
+import asyncio
+import logging
+import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
+# Настройки
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN         = os.getenv("BOT_TOKEN")
-GOOGLE_CREDS_B64  = os.getenv("GOOGLE_CREDS_B64")
-SPREADSHEET_NAME  = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL       = os.getenv("WEBHOOK_URL")
+# Инициализация бота и диспетчера
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
 
-if not BOT_TOKEN or not GOOGLE_CREDS_B64 or not SPREADSHEET_NAME or not WEBHOOK_URL:
-    raise RuntimeError("Required environment variables: BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL")
+# Настройка Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds_json = os.getenv("GOOGLE_CREDS_JSON")
+creds = ServiceAccountCredentials.from_json_keyfile_dict(eval(creds_json), scope)
+client = gspread.authorize(creds)
+spreadsheet = client.open("PBTEndorsements")
+sheet = spreadsheet.sheet1
 
-# Initialize bot and dispatcher
-bot     = Bot(token=BOT_TOKEN)
-Bot.set_current(bot)
-storage = MemoryStorage()
-dp      = Dispatcher(bot, storage=storage)
-Dispatcher.set_current(dp)
-
-# GSpread Init
-def init_gspread():
-    raw_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
-    creds_dict = json.loads(raw_json)
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds  = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    return client.open(SPREADSHEET_NAME).sheet1
-
-sheet = init_gspread()
-
-# States
-class Survey(StatesGroup):
+# Состояния
+class Form(StatesGroup):
     first_name = State()
-    last_name  = State()
-    email      = State()
-    country    = State()
-    city       = State()
+    last_name = State()
+    email = State()
+    country = State()
+    city = State()
 
-# Handlers
-@dp.message_handler(commands=["start"], state="*")
-async def cmd_start(message: types.Message, state: FSMContext):
-    logging.info(f"/start received from user {message.from_user.id}")
-    await state.finish()
-    try:
-        await message.answer(
-            "Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:"
-        )
-        logging.info("Welcome message sent successfully")
-    except Exception as e:
-        logging.error(f"Failed to send welcome message: {e}")
-    await Survey.first_name.set()
+# Хендлер на /start
+@dp.message(commands="start")
+async def cmd_start(message: Message, state: FSMContext):
+    await message.answer("👋 Привет! Давайте поддержим инициативу Plant Based Treaty.\nКак вас зовут?")
+    await state.set_state(Form.first_name)
 
-
-@dp.message_handler(state=Survey.first_name)
-async def process_first_name(message: types.Message, state: FSMContext):
-    logging.info(f"Received first name: {message.text}")
+@dp.message(Form.first_name)
+async def process_first_name(message: Message, state: FSMContext):
     await state.update_data(first_name=message.text)
-    await message.answer("Last Name:")
-    logging.info("Prompted last name to user")
-    await Survey.last_name.set()
+    await message.answer("А фамилия?")
+    await state.set_state(Form.last_name)
 
-@dp.message_handler(state=Survey.last_name)
-async def process_last_name(message: types.Message, state: FSMContext):
-    logging.info(f"Received last name: {message.text}")
+@dp.message(Form.last_name)
+async def process_last_name(message: Message, state: FSMContext):
     await state.update_data(last_name=message.text)
-    await message.answer("Email:")
-    await Survey.email.set()
+    await message.answer("Ваш email:")
+    await state.set_state(Form.email)
 
-@dp.message_handler(state=Survey.email)
-async def process_email(message: types.Message, state: FSMContext):
-    logging.info(f"Received email: {message.text}")
+@dp.message(Form.email)
+async def process_email(message: Message, state: FSMContext):
     await state.update_data(email=message.text)
-    await message.answer("Country:")
-    await Survey.country.set()
+    await message.answer("Из какой вы страны?")
+    await state.set_state(Form.country)
 
-@dp.message_handler(state=Survey.country)
-async def process_country(message: types.Message, state: FSMContext):
-    logging.info(f"Received country: {message.text}")
+@dp.message(Form.country)
+async def process_country(message: Message, state: FSMContext):
     await state.update_data(country=message.text)
-    await message.answer("City:")
-    await Survey.city.set()
+    await message.answer("А город?")
+    await state.set_state(Form.city)
 
-@dp.message_handler(state=Survey.city)
-async def process_city(message: types.Message, state: FSMContext):
-    logging.info(f"Received city: {message.text}")
+@dp.message(Form.city)
+async def process_city(message: Message, state: FSMContext):
     await state.update_data(city=message.text)
     data = await state.get_data()
-    logging.info(f"Collected data: {data}")
     row = [data["first_name"], data["last_name"], data["email"], data["country"], data["city"]]
-    logging.info(f"Appending row to sheet: {row}")
+    sheet.append_row(row)
+    await message.answer("✅ Спасибо! Ваш отклик сохранён.")
+    await state.clear()
 
-    try:
-        sheet.append_row(row)
-        logging.info("Survey finished successfully")
-        await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
-    except Exception as e:
-        logging.error(f"Failed to write to sheet: {e}")
-        await message.answer("There was an error saving your response. Please try again later.")
-        return
+# Обработка необработанных сообщений
+@dp.message()
+async def fallback(message: Message):
+    await message.answer("Пожалуйста, используйте команду /start, чтобы начать анкету.")
 
-    await state.finish()
-
-@dp.message_handler()
-async def fallback(message: types.Message):
-    logging.info(f"Fallback message from {message.from_user.id}: {message.text}")
-    await message.reply("Please send /start to begin.")
-
-# Webhook Setup
+# Веб-сервер
 async def on_startup(app):
-    logging.info("Waiting before setting webhook...")
-    await asyncio.sleep(2)
-    logging.info("Setting webhook with drop_pending_updates...")
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+    logging.info("Устанавливаю webhook...")
+    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=False)
+    logging.info("Webhook установлен")
 
 async def on_shutdown(app):
-    logging.warning("Shutting down..")
-    await bot.delete_webhook()
-    await dp.storage.close()
-    await dp.storage.wait_closed()
-    logging.warning("Bye!")
+    logging.warning("Отключение...")
 
 async def handle_webhook(request):
-    try:
-        Bot.set_current(bot)
-        Dispatcher.set_current(dp)
-        update_json = await request.json()
-        logging.info(f"Received update: {json.dumps(update_json)}")
-        update = types.Update(**update_json)
-        await dp.process_update(update)
-    except Exception as e:
-        logging.error(f"Failed to process update: {e}")
+    body = await request.json()
+    update = types.Update(**body)
+    await dp.feed_update(bot, update)
     return web.Response()
 
 app = web.Application()
-app.router.add_post("/webhook", handle_webhook)
-
-# Register lifecycle events
+app.router.add_post('/webhook', handle_webhook)
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
-if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    web.run_app(app, host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
