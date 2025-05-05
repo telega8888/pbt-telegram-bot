@@ -1,9 +1,11 @@
-import os
+import base64
 import json
+import os
 import logging
-
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+# и остальной код...
+
 
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
