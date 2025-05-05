@@ -141,6 +141,18 @@ async def handle_webhook(request):
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
 
+# Добавляем новый хэндлер для "проверки живости"
+@dp.message_handler(commands=['ping'])
+async def cmd_ping(message: types.Message):
+    await message.answer("pong")
+
+# Или для вебхука (если используешь aiohttp)
+@app.route("/ping")
+async def ping(request):
+    return web.Response(text="pong")
+
+# Остальной код (webhook, FSM и т.д.) остаётся без изменений
+
 # Register lifecycle events
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
