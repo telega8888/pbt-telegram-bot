@@ -30,14 +30,25 @@ dp      = Dispatcher(bot, storage=storage)
 
 # Функция для инициализации Google Sheets
 def init_gspread():
-    creds_dict = json.loads(GOOGLE_CREDS_JSON)
+    # 1) Читаем base64 из env
+    b64 = os.getenv("GOOGLE_CREDS_B64")
+    if not b64:
+        raise RuntimeError("GOOGLE_CREDS_B64 is not set")
+
+    # 2) Декодируем в оригинальный JSON
+    raw_json = base64.b64decode(b64).decode("utf-8")
+
+    # 3) Парсим JSON
+    creds_dict = json.loads(raw_json)
+
+    # 4) Авторизуемся в Google Sheets
     scope = [
         "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
+        "https://www.googleapis.com/auth/drive",
     ]
     creds  = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    return client.open(SPREADSHEET_NAME).sheet1
+    return client.open(os.getenv("SPREADSHEET_NAME")).sheet1
 
 sheet = init_gspread()
 
