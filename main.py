@@ -54,7 +54,7 @@ class Survey(StatesGroup):
 # === Команда /start ===
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
-    await state.finish()
+    await state.finish()  # Завершаем все предыдущие состояния
     await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
     await Survey.first_name.set()
 
