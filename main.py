@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN        = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL      = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL")  # Например: https://your-app.onrender.com/webhook
 
 if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
     raise RuntimeError("Missing required environment variables")
@@ -26,7 +26,7 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# === Инициализация Google Sheets ===
+# === Google Sheets ===
 def init_gspread():
     raw_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
     creds_dict = json.loads(raw_json)
@@ -40,7 +40,7 @@ def init_gspread():
 
 sheet = init_gspread()
 
-# === FSM: опрос ===
+# === FSM: анкета ===
 class Survey(StatesGroup):
     first_name = State()
     last_name  = State()
@@ -48,7 +48,7 @@ class Survey(StatesGroup):
     country    = State()
     city       = State()
 
-# === Хэндлеры FSM ===
+# === Хэндлеры ===
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()
@@ -92,55 +92,39 @@ async def process_city(message: types.Message, state: FSMContext):
     ]
     try:
         sheet.append_row(row)
-        await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
+        await message.answer("✅ Thank you for endorsing the Plant Based Treaty!")
     except Exception as e:
-        logging.error(f"Failed to write to sheet: {e}")
-        await message.answer("Error saving your response. Please try later.")
+        logging.exception("Failed to save to Google Sheet")
+        await message.answer("❌ Error saving your response. Please try again later.")
     await state.finish()
 
 @dp.message_handler()
 async def fallback(message: types.Message):
     await message.reply("Please send /start to begin.")
 
-# === Определяем lifecycle-хэндлеры **
-async def on_startup(app: web.Application):
+# === Webhook обработка ===
+async def on_startup(app):
     logging.info("Setting webhook...")
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
-async def on_shutdown(app: web.Application):
-    logging.info("Deleting webhook...")
+async def on_shutdown(app):
+    logging.info("Shutting down...")
     await bot.delete_webhook()
     await dp.storage.close()
     await dp.storage.wait_closed()
 
-# === Webhook endpoint ===
-async def handle_webhook(request: web.Request):
+async def webhook_handler(request):
     try:
-        update_data = await request.json()
-        logging.info(f"Incoming update: {update_data}")
-
-        Bot.set_current(bot)          # Устанавливаем текущий Bot
-        Dispatcher.set_current(dp)    # Устанавливаем текущий Dispatcher
-
-        update = types.Update(**update_data)
+        data = await request.json()
+        update = types.Update(**data)
         await dp.process_update(update)
         return web.Response()
     except Exception as e:
-        logging.error(f"Webhook error: {e}")
-        return web.Response(status=400)
+        logging.exception("Webhook handling failed")
+        return web.Response(status=500)
 
-async def ping(request: web.Request):
+# === Пинг для Render ===
+async def ping(request):
     return web.Response(text="pong")
 
-# === Сборка aiohttp-приложения ===
-app = web.Application()
-app.router.add_post("/webhook", handle_webhook)
-app.router.add_get("/ping", ping)
-
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
-
-# === Старт сервера ===
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    web.run_app(app, host="0.0.0.0", port=port)
+# === Запуск aiohttp
