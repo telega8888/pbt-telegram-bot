@@ -122,7 +122,7 @@ async def handle_webhook(request: web.Request):
     await dp.process_update(update)
     return web.Response()
 
-# ——— healthcheck endpoints —————————————————————————————
+# ——— Healthcheck endpoints —————————————————————————————
 async def ping(request: web.Request):
     return web.Response(text="pong")
 
@@ -132,13 +132,15 @@ async def root(request: web.Request):
 # ——— Сборка приложения ———————————————————————————————————
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
+
 app.router.add_get("/ping", ping)
+app.router.add_route("HEAD", "/ping", ping)  # поддержка HEAD для UptimeRobot
+
 app.router.add_get("/", root)
 
+# ——— Синхронная установка webhook перед запуском ——————————
 if __name__ == "__main__":
     import asyncio
-
-    # Синхронная установка webhook перед запуском
     loop = asyncio.get_event_loop()
     logging.info("Main: deleting old webhook...")
     loop.run_until_complete(bot.delete_webhook(drop_pending_updates=True))
