@@ -10,29 +10,31 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
+# === Логирование ===
 logging.basicConfig(level=logging.INFO)
 
 # === Переменные окружения ===
-BOT_TOKEN        = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL      = os.getenv("WEBHOOK_URL")  # Например: https://your-app.onrender.com/webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8080))
 
 if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
-    raise RuntimeError("Missing required environment variables")
+    raise RuntimeError("Missing one or more required environment variables")
 
-# === Инициализация бота и диспетчера ===
+# === Инициализация бота и хранилища состояний ===
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# === Google Sheets ===
+# === Инициализация Google Sheets ===
 def init_gspread():
-    raw_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
-    creds_dict = json.loads(raw_json)
+    creds_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
+    creds_dict = json.loads(creds_json)
     scope = [
         "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive"
     ]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
@@ -40,91 +42,100 @@ def init_gspread():
 
 sheet = init_gspread()
 
-# === FSM: анкета ===
+# === FSM Состояния ===
 class Survey(StatesGroup):
     first_name = State()
-    last_name  = State()
-    email      = State()
-    country    = State()
-    city       = State()
+    last_name = State()
+    email = State()
+    country = State()
+    city = State()
 
-# === Хэндлеры ===
+# === Команда /start ===
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()
-    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\nFirst Name:")
+    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
-async def process_first_name(message: types.Message, state: FSMContext):
-    await state.update_data(first_name=message.text)
+async def step_first_name(message: types.Message, state: FSMContext):
+    await state.update_data(first_name=message.text.strip())
     await message.answer("Last Name:")
     await Survey.last_name.set()
 
 @dp.message_handler(state=Survey.last_name)
-async def process_last_name(message: types.Message, state: FSMContext):
-    await state.update_data(last_name=message.text)
+async def step_last_name(message: types.Message, state: FSMContext):
+    await state.update_data(last_name=message.text.strip())
     await message.answer("Email:")
     await Survey.email.set()
 
 @dp.message_handler(state=Survey.email)
-async def process_email(message: types.Message, state: FSMContext):
-    await state.update_data(email=message.text)
+async def step_email(message: types.Message, state: FSMContext):
+    await state.update_data(email=message.text.strip())
     await message.answer("Country:")
     await Survey.country.set()
 
 @dp.message_handler(state=Survey.country)
-async def process_country(message: types.Message, state: FSMContext):
-    await state.update_data(country=message.text)
+async def step_country(message: types.Message, state: FSMContext):
+    await state.update_data(country=message.text.strip())
     await message.answer("City:")
     await Survey.city.set()
 
 @dp.message_handler(state=Survey.city)
-async def process_city(message: types.Message, state: FSMContext):
-    await state.update_data(city=message.text)
+async def step_city(message: types.Message, state: FSMContext):
+    await state.update_data(city=message.text.strip())
     data = await state.get_data()
-    row = [
-        data["first_name"],
-        data["last_name"],
-        data["email"],
-        data["country"],
-        data["city"],
-    ]
+
     try:
-        sheet.append_row(row)
+        sheet.append_row([
+            data.get("first_name", ""),
+            data.get("last_name", ""),
+            data.get("email", ""),
+            data.get("country", ""),
+            data.get("city", "")
+        ])
         await message.answer("✅ Thank you for endorsing the Plant Based Treaty!")
     except Exception as e:
-        logging.exception("Failed to save to Google Sheet")
-        await message.answer("❌ Error saving your response. Please try again later.")
+        logging.exception("Error writing to Google Sheet")
+        await message.answer("⚠️ Error saving your response. Please try again later.")
+
     await state.finish()
 
 @dp.message_handler()
-async def fallback(message: types.Message):
-    await message.reply("Please send /start to begin.")
+async def unknown_message(message: types.Message):
+    await message.reply("Please send /start to begin the survey.")
 
-# === Webhook обработка ===
+# === AIOHTTP Webhook обработка ===
 async def on_startup(app):
     logging.info("Setting webhook...")
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+    await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(app):
     logging.info("Shutting down...")
     await bot.delete_webhook()
-    await dp.storage.close()
-    await dp.storage.wait_closed()
+    await storage.close()
+    await storage.wait_closed()
 
-async def webhook_handler(request):
+async def handle_webhook(request):
     try:
         data = await request.json()
         update = types.Update(**data)
         await dp.process_update(update)
         return web.Response()
     except Exception as e:
-        logging.exception("Webhook handling failed")
+        logging.exception("Webhook error")
         return web.Response(status=500)
 
-# === Пинг для Render ===
 async def ping(request):
     return web.Response(text="pong")
 
-# === Запуск aiohttp
+# === Запуск приложения ===
+app = web.Application()
+app.router.add_post("/webhook", handle_webhook)
+app.router.add_get("/ping", ping)
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
+
+if __name__ == "__main__":
+    print(f"🚀 Server is running on port {PORT}")
+    web.run_app(app, host="0.0.0.0", port=PORT)
