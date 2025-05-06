@@ -13,7 +13,6 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 logging.basicConfig(level=logging.INFO)
 
-# Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
@@ -85,25 +84,28 @@ async def process_city(message: types.Message, state: FSMContext):
     await state.update_data(city=message.text)
     data = await state.get_data()
     row = [data["first_name"], data["last_name"], data["email"], data["country"], data["city"]]
-
+    
     try:
         sheet.append_row(row)
         await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
     except Exception as e:
         logging.error(f"Failed to write to sheet: {e}")
         await message.answer("Error saving your response. Please try later.")
-
+    
     await state.finish()
 
 @dp.message_handler()
 async def fallback(message: types.Message):
     await message.reply("Please send /start to begin.")
 
-# Webhook handler
+# Webhook handlers
 async def handle_webhook(request):
     try:
         update_data = await request.json()
         logging.info(f"Incoming update: {update_data}")
+
+        Bot.set_current(bot)  # ← ОБЯЗАТЕЛЬНО!
+
         update = types.Update(**update_data)
         await dp.process_update(update)
         return web.Response()
@@ -114,17 +116,16 @@ async def handle_webhook(request):
 async def ping(request):
     return web.Response(text="pong")
 
-# App setup
+# Application setup
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
 app.router.add_get("/ping", ping)
 
+# Lifecycle events
 async def on_startup(app):
-    logging.info("Setting webhook...")
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
 async def on_shutdown(app):
-    logging.info("Deleting webhook...")
     await bot.delete_webhook()
     await dp.storage.close()
     await dp.storage.wait_closed()
@@ -133,5 +134,4 @@ app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Render uses dynamic PORT
-    web.run_app(app, host="0.0.0.0", port=port)
+    web.run_app(app, host="0.0.0.0", port=10000)
