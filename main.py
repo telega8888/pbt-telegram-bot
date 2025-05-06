@@ -125,12 +125,24 @@ async def on_shutdown(app: web.Application):
 # ——— Webhook endpoint ———————————————————————————————————
 async def handle_webhook(request: web.Request):
     data = await request.json()
-    # устанавливаем контексты
+
+    # Устанавливаем контекст
     Bot.set_current(bot)
     Dispatcher.set_current(dp)
+
     update = types.Update(**data)
+
+    # Логируем текущее состояние для диагностики
+    if update.message:
+        chat_id = update.message.chat.id
+        state = dp.current_state(chat=chat_id)
+        current = await state.get_state()
+        logging.info(f"[DEBUG] Chat {chat_id} — state before handling: {current!r}")
+
+    # Обрабатываем обновление
     await dp.process_update(update)
     return web.Response()
+
 
 # ——— Healthcheck endpoints —————————————————————————————
 async def ping(request: web.Request):
