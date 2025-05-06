@@ -3,31 +3,30 @@ import json
 import logging
 import base64
 import gspread
-import asyncio
 from aiohttp import web
 from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.dispatcher.webhook import get_new_configured_app
 
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# === Переменные окружения ===
+BOT_TOKEN        = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL")
 
 if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
     raise RuntimeError("Missing required environment variables")
 
-# Initialize bot and dispatcher
+# === Инициализация бота и диспетчера ===
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# GSpread Init
+# === Инициализация Google Sheets ===
 def init_gspread():
     raw_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
     creds_dict = json.loads(raw_json)
@@ -41,15 +40,15 @@ def init_gspread():
 
 sheet = init_gspread()
 
-# States
+# === FSM: опрос ===
 class Survey(StatesGroup):
     first_name = State()
-    last_name = State()
-    email = State()
-    country = State()
-    city = State()
+    last_name  = State()
+    email      = State()
+    country    = State()
+    city       = State()
 
-# Handlers
+# === Хэндлеры FSM ===
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()
@@ -84,28 +83,44 @@ async def process_country(message: types.Message, state: FSMContext):
 async def process_city(message: types.Message, state: FSMContext):
     await state.update_data(city=message.text)
     data = await state.get_data()
-    row = [data["first_name"], data["last_name"], data["email"], data["country"], data["city"]]
-    
+    row = [
+        data["first_name"],
+        data["last_name"],
+        data["email"],
+        data["country"],
+        data["city"],
+    ]
     try:
         sheet.append_row(row)
         await message.answer("Thank you for endorsing the Plant Based Treaty! ✅")
     except Exception as e:
         logging.error(f"Failed to write to sheet: {e}")
         await message.answer("Error saving your response. Please try later.")
-    
     await state.finish()
 
 @dp.message_handler()
 async def fallback(message: types.Message):
     await message.reply("Please send /start to begin.")
 
-# Webhook handlers
-async def handle_webhook(request):
+# === Определяем lifecycle-хэндлеры **
+async def on_startup(app: web.Application):
+    logging.info("Setting webhook...")
+    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+
+async def on_shutdown(app: web.Application):
+    logging.info("Deleting webhook...")
+    await bot.delete_webhook()
+    await dp.storage.close()
+    await dp.storage.wait_closed()
+
+# === Webhook endpoint ===
+async def handle_webhook(request: web.Request):
     try:
         update_data = await request.json()
         logging.info(f"Incoming update: {update_data}")
 
-        Bot.set_current(bot)  # ← ОБЯЗАТЕЛЬНО!
+        Bot.set_current(bot)          # Устанавливаем текущий Bot
+        Dispatcher.set_current(dp)    # Устанавливаем текущий Dispatcher
 
         update = types.Update(**update_data)
         await dp.process_update(update)
@@ -114,29 +129,18 @@ async def handle_webhook(request):
         logging.error(f"Webhook error: {e}")
         return web.Response(status=400)
 
-async def ping(request):
+async def ping(request: web.Request):
     return web.Response(text="pong")
 
-app = get_new_configured_app(
-    dispatcher=dp,
-    path="/webhook",               # ваш путь
-)
-
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
+# === Сборка aiohttp-приложения ===
+app = web.Application()
+app.router.add_post("/webhook", handle_webhook)
 app.router.add_get("/ping", ping)
 
-# Lifecycle events
-async def on_startup(app):
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-
-async def on_shutdown(app):
-    await bot.delete_webhook()
-    await dp.storage.close()
-    await dp.storage.wait_closed()
-
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
+# === Старт сервера ===
 if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 8080))
+    web.run_app(app, host="0.0.0.0", port=port)
