@@ -11,40 +11,37 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
-# === Логирование ===
+# ——— Логирование ——————————————————————————————————————————
 logging.basicConfig(level=logging.INFO)
 
-# === Переменные окружения ===
+# ——— Переменные окружения ———————————————————————————————
 BOT_TOKEN        = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL      = os.getenv("WEBHOOK_URL")  # https://<your-app>.onrender.com/webhook
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL")   # https://<your-app>.onrender.com/webhook
 PORT             = int(os.getenv("PORT", 8080))
 
 if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
     raise RuntimeError("Missing one or more required environment variables")
 
-# === Инициализация бота и хранилища FSM ===
+# ——— Инициализация бота и FSM-хранилища ———————————————
 bot = Bot(token=BOT_TOKEN)
 Bot.set_current(bot)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# === Инициализация Google Sheets ===
+# ——— Google Sheets —————————————————————————————————————
 def init_gspread():
-    creds_json = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
-    creds_dict = json.loads(creds_json)
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
+    creds_json  = base64.b64decode(GOOGLE_CREDS_B64).decode("utf-8")
+    creds_dict  = json.loads(creds_json)
+    scope       = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds       = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client      = gspread.authorize(creds)
     return client.open(SPREADSHEET_NAME).sheet1
 
 sheet = init_gspread()
 
-# === FSM Состояния опроса ===
+# ——— FSM: состояния анкеты —————————————————————————————
 class Survey(StatesGroup):
     first_name = State()
     last_name  = State()
@@ -52,11 +49,14 @@ class Survey(StatesGroup):
     country    = State()
     city       = State()
 
-# === Обработчики команд и состояний ===
+# ——— Обработчики FSM —————————————————————————————————————
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
-    await state.finish()  # Сброс предыдущего состояния
-    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
+    await state.finish()
+    await message.answer(
+        "Welcome! Let's endorse the Plant Based Treaty.\n\n"
+        "First Name:"
+    )
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
@@ -102,15 +102,16 @@ async def step_city(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Error saving your response. Please try again later.")
 
     await state.finish()
+    # После завершения: бот больше не перезапускает опрос автоматически
 
 @dp.message_handler()
 async def unknown_message(message: types.Message):
-    await message.reply("Please send /start to begin the survey.")
+    await message.reply("Чтобы начать новую анкету, отправь /start")
 
-# === Webhook lifecycle handlers ===
+# ——— Webhook lifecycle ——————————————————————————————————
 async def on_startup(app: web.Application):
     logging.info("Setting webhook...")
-    # Удаляем старые апдейты и ставим новый Webhook
+    # удаляем старые и ставим новый webhook с очисткой очереди
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
     logging.info("Webhook set to %s", WEBHOOK_URL)
@@ -121,29 +122,24 @@ async def on_shutdown(app: web.Application):
     await storage.close()
     await storage.wait_closed()
 
-# === Webhook endpoint ===
+# ——— Webhook endpoint ———————————————————————————————————
 async def handle_webhook(request: web.Request):
-    try:
-        data = await request.json()
-        # Устанавливаем контекст для бота и диспетчера
-        Bot.set_current(bot)
-        Dispatcher.set_current(dp)
+    data = await request.json()
+    # устанавливаем контексты
+    Bot.set_current(bot)
+    Dispatcher.set_current(dp)
+    update = types.Update(**data)
+    await dp.process_update(update)
+    return web.Response()
 
-        update = types.Update(**data)
-        await dp.process_update(update)
-        return web.Response()
-    except Exception:
-        logging.exception("Webhook error")
-        return web.Response(status=500)
-
-# === Healthcheck endpoints ===
+# ——— Healthcheck endpoints —————————————————————————————
 async def ping(request: web.Request):
     return web.Response(text="pong")
 
 async def root(request: web.Request):
     return web.Response(text="Bot is alive!")
 
-# === Запуск приложения ===
+# ——— Запуск приложения ——————————————————————————————————
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
 app.router.add_get("/ping", ping)
