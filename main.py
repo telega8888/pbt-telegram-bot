@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import base64
+
 import gspread
 from aiohttp import web
 from oauth2client.service_account import ServiceAccountCredentials
@@ -14,16 +15,16 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 logging.basicConfig(level=logging.INFO)
 
 # === Переменные окружения ===
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN        = os.getenv("BOT_TOKEN")
 GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.getenv("PORT", 8080))
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL")  # https://<your-app>.onrender.com/webhook
+PORT             = int(os.getenv("PORT", 8080))
 
 if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
     raise RuntimeError("Missing one or more required environment variables")
 
-# === Инициализация бота и хранилища состояний ===
+# === Инициализация бота и хранилища FSM ===
 bot = Bot(token=BOT_TOKEN)
 Bot.set_current(bot)
 storage = MemoryStorage()
@@ -43,20 +44,19 @@ def init_gspread():
 
 sheet = init_gspread()
 
-# === FSM Состояния ===
+# === FSM Состояния опроса ===
 class Survey(StatesGroup):
     first_name = State()
-    last_name = State()
-    email = State()
-    country = State()
-    city = State()
+    last_name  = State()
+    email      = State()
+    country    = State()
+    city       = State()
 
-# === Команда /start ===
+# === Обработчики команд и состояний ===
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
-    await state.finish()  # Завершаем все предыдущие состояния
+    await state.finish()  # Сброс предыдущего состояния
     await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
-    # Явно создаем новый контекст состояния для текущего пользователя
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
@@ -97,7 +97,7 @@ async def step_city(message: types.Message, state: FSMContext):
             data.get("city", "")
         ])
         await message.answer("✅ Thank you for endorsing the Plant Based Treaty!")
-    except Exception as e:
+    except Exception:
         logging.exception("Error writing to Google Sheet")
         await message.answer("⚠️ Error saving your response. Please try again later.")
 
@@ -107,36 +107,47 @@ async def step_city(message: types.Message, state: FSMContext):
 async def unknown_message(message: types.Message):
     await message.reply("Please send /start to begin the survey.")
 
-# === AIOHTTP Webhook обработка ===
-async def on_startup(app):
+# === Webhook lifecycle handlers ===
+async def on_startup(app: web.Application):
     logging.info("Setting webhook...")
-    # Убедитесь, что бот настроен перед использованием webhook
-    await bot.set_webhook(WEBHOOK_URL)
+    # Удаляем старые апдейты и ставим новый Webhook
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+    logging.info("Webhook set to %s", WEBHOOK_URL)
 
-async def on_shutdown(app):
+async def on_shutdown(app: web.Application):
     logging.info("Shutting down...")
     await bot.delete_webhook()
     await storage.close()
     await storage.wait_closed()
 
-async def handle_webhook(request):
+# === Webhook endpoint ===
+async def handle_webhook(request: web.Request):
     try:
         data = await request.json()
+        # Устанавливаем контекст для бота и диспетчера
+        Bot.set_current(bot)
+        Dispatcher.set_current(dp)
+
         update = types.Update(**data)
-        # Убедитесь, что мы работаем с актуальным состоянием
         await dp.process_update(update)
         return web.Response()
-    except Exception as e:
+    except Exception:
         logging.exception("Webhook error")
         return web.Response(status=500)
 
-async def ping(request):
+# === Healthcheck endpoints ===
+async def ping(request: web.Request):
     return web.Response(text="pong")
+
+async def root(request: web.Request):
+    return web.Response(text="Bot is alive!")
 
 # === Запуск приложения ===
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
 app.router.add_get("/ping", ping)
+app.router.add_get("/", root)
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
