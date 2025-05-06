@@ -10,6 +10,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher.webhook import get_new_configured_app
 
 logging.basicConfig(level=logging.INFO)
 
@@ -116,9 +117,13 @@ async def handle_webhook(request):
 async def ping(request):
     return web.Response(text="pong")
 
-# Application setup
-app = web.Application()
-app.router.add_post("/webhook", handle_webhook)
+app = get_new_configured_app(
+    dispatcher=dp,
+    path="/webhook",               # ваш путь
+)
+
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
 app.router.add_get("/ping", ping)
 
 # Lifecycle events
