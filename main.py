@@ -25,6 +25,7 @@ if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
 
 # === Инициализация бота и хранилища состояний ===
 bot = Bot(token=BOT_TOKEN)
+Bot.set_current(bot)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
