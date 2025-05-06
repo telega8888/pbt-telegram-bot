@@ -132,10 +132,7 @@ async def root(request: web.Request):
 # ——— Сборка приложения ———————————————————————————————————
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
-
-app.router.add_get("/ping", ping)
-app.router.add_route("HEAD", "/ping", ping)  # поддержка HEAD для UptimeRobot
-
+app.router.add_get("/ping", ping)  # GET /ping и HEAD /ping по умолчанию
 app.router.add_get("/", root)
 
 # ——— Синхронная установка webhook перед запуском ——————————
