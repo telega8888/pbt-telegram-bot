@@ -9,8 +9,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher import Dispatcher as AiogramDispatcher
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher import Dispatcher as AiogramDispatcher
 
 # ——— Логирование ——————————————————————————————————————————
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +27,6 @@ if not all([BOT_TOKEN, GOOGLE_CREDS_B64, SPREADSHEET_NAME, WEBHOOK_URL]):
 
 # ——— Инициализация бота и FSM-хранилища ———————————————
 bot = Bot(token=BOT_TOKEN)
-# Устанавливаем текущий экземпляр бота в контекст
 Bot.set_current(bot)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
@@ -97,11 +96,11 @@ async def step_city(message: types.Message, state: FSMContext):
     data = await state.get_data()
     try:
         sheet.append_row([
-            data.get("first_name",""),
-            data.get("last_name",""),
-            data.get("email",""),
-            data.get("country",""),
-            data.get("city","")
+            data.get("first_name", ""),
+            data.get("last_name", ""),
+            data.get("email", ""),
+            data.get("country", ""),
+            data.get("city", "")
         ])
         await message.answer("✅ Thank you for endorsing the Plant Based Treaty!")
     except Exception:
@@ -114,27 +113,11 @@ async def unknown_message(message: types.Message):
     logging.info("UNKNOWN MESSAGE in state %s", await dp.current_state(chat=message.chat.id).get_state())
     await message.reply("To start a new survey, send /start")
 
-# ——— Webhook lifecycle ——————————————————————————————————
-async def on_startup(app: web.Application):
-    logging.info("ON STARTUP: set webhook")
-    # Очистка очереди и установка webhook
-    await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-    logging.info("Webhook set to %s", WEBHOOK_URL)
-
-async def on_shutdown(app: web.Application):
-    logging.info("ON SHUTDOWN: delete webhook")
-    await bot.delete_webhook()
-    await storage.close()
-    await storage.wait_closed()
-
 # ——— Webhook endpoint ———————————————————————————————————
 async def handle_webhook(request: web.Request):
     data = await request.json()
-    # Устанавливаем текущий контекст
     Bot.set_current(bot)
     AiogramDispatcher.set_current(dp)
-
     update = types.Update(**data)
     await dp.process_update(update)
     return web.Response()
@@ -146,14 +129,21 @@ async def ping(request: web.Request):
 async def root(request: web.Request):
     return web.Response(text="Bot is alive!")
 
-# ——— Запуск приложения ——————————————————————————————————
+# ——— Сборка приложения ———————————————————————————————————
 app = web.Application()
 app.router.add_post("/webhook", handle_webhook)
 app.router.add_get("/ping", ping)
 app.router.add_get("/", root)
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
 
 if __name__ == "__main__":
-    logging.info("Starting server on port %s", PORT)
+    import asyncio
+
+    # Синхронная установка webhook перед запуском
+    loop = asyncio.get_event_loop()
+    logging.info("Main: deleting old webhook...")
+    loop.run_until_complete(bot.delete_webhook(drop_pending_updates=True))
+    logging.info("Main: setting new webhook to %s", WEBHOOK_URL)
+    loop.run_until_complete(bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True))
+
+    print(f"🚀 Server is running on port {PORT}")
     web.run_app(app, host="0.0.0.0", port=PORT)
