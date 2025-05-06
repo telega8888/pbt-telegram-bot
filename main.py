@@ -101,7 +101,12 @@ async def fallback(message: types.Message):
 # Webhook handlers
 async def handle_webhook(request):
     try:
-        update = types.Update(**await request.json())
+        # Добавь эти 2 строки ЛОГИРОВАНИЯ прямо здесь ▼
+        update_data = await request.json()
+        logging.info(f"Incoming update: {update_data}")  # Логируем входящий запрос
+        # ▲ между этими строками
+        
+        update = types.Update(**update_data)
         await dp.process_update(update)
         return web.Response()
     except Exception as e:
