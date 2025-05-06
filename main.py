@@ -52,42 +52,44 @@ class Survey(StatesGroup):
 # ——— Обработчики FSM —————————————————————————————————————
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
+    logging.info("START command received")
     await state.finish()
-    await message.answer(
-        "Welcome! Let's endorse the Plant Based Treaty.\n\n"
-        "First Name:"
-    )
+    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
 async def step_first_name(message: types.Message, state: FSMContext):
+    logging.info(f"step_first_name fired, text={message.text!r}")
     await state.update_data(first_name=message.text.strip())
     await message.answer("Last Name:")
     await Survey.last_name.set()
 
 @dp.message_handler(state=Survey.last_name)
 async def step_last_name(message: types.Message, state: FSMContext):
+    logging.info(f"step_last_name fired, text={message.text!r}")
     await state.update_data(last_name=message.text.strip())
     await message.answer("Email:")
     await Survey.email.set()
 
 @dp.message_handler(state=Survey.email)
 async def step_email(message: types.Message, state: FSMContext):
+    logging.info(f"step_email fired, text={message.text!r}")
     await state.update_data(email=message.text.strip())
     await message.answer("Country:")
     await Survey.country.set()
 
 @dp.message_handler(state=Survey.country)
 async def step_country(message: types.Message, state: FSMContext):
+    logging.info(f"step_country fired, text={message.text!r}")
     await state.update_data(country=message.text.strip())
     await message.answer("City:")
     await Survey.city.set()
 
 @dp.message_handler(state=Survey.city)
 async def step_city(message: types.Message, state: FSMContext):
+    logging.info(f"step_city fired, text={message.text!r}")
     await state.update_data(city=message.text.strip())
     data = await state.get_data()
-
     try:
         sheet.append_row([
             data.get("first_name", ""),
@@ -100,12 +102,12 @@ async def step_city(message: types.Message, state: FSMContext):
     except Exception:
         logging.exception("Error writing to Google Sheet")
         await message.answer("⚠️ Error saving your response. Please try again later.")
-
     await state.finish()
-    # После завершения: бот больше не перезапускает опрос автоматически
 
 @dp.message_handler()
 async def unknown_message(message: types.Message):
+    # этот хэндлер срабатывает только когда нет активного state
+    logging.info("unknown_message fired")
     await message.reply("Чтобы начать новую анкету, отправь /start")
 
 # ——— Webhook lifecycle ——————————————————————————————————
@@ -125,24 +127,20 @@ async def on_shutdown(app: web.Application):
 # ——— Webhook endpoint ———————————————————————————————————
 async def handle_webhook(request: web.Request):
     data = await request.json()
-
-    # Устанавливаем контекст
+    # устанавливаем контексты
     Bot.set_current(bot)
     Dispatcher.set_current(dp)
 
-    update = types.Update(**data)
-
-    # Логируем текущее состояние для диагностики
-    if update.message:
-        chat_id = update.message.chat.id
+    # логируем состояние до обработки (для отладки)
+    if data.get("message"):
+        chat_id = data["message"]["chat"]["id"]
         state = dp.current_state(chat=chat_id)
         current = await state.get_state()
-        logging.info(f"[DEBUG] Chat {chat_id} — state before handling: {current!r}")
+        logging.info(f"[DEBUG] Before update — chat {chat_id}, state={current}")
 
-    # Обрабатываем обновление
+    update = types.Update(**data)
     await dp.process_update(update)
     return web.Response()
-
 
 # ——— Healthcheck endpoints —————————————————————————————
 async def ping(request: web.Request):
