@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import base64
-
+# ——— рабочий код ———————————————————————————
 import gspread
 from aiohttp import web
 from oauth2client.service_account import ServiceAccountCredentials
