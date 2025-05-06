@@ -56,6 +56,7 @@ class Survey(StatesGroup):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()  # Завершаем все предыдущие состояния
     await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
+    # Явно создаем новый контекст состояния для текущего пользователя
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
@@ -109,6 +110,7 @@ async def unknown_message(message: types.Message):
 # === AIOHTTP Webhook обработка ===
 async def on_startup(app):
     logging.info("Setting webhook...")
+    # Убедитесь, что бот настроен перед использованием webhook
     await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(app):
@@ -121,6 +123,7 @@ async def handle_webhook(request):
     try:
         data = await request.json()
         update = types.Update(**data)
+        # Убедитесь, что мы работаем с актуальным состоянием
         await dp.process_update(update)
         return web.Response()
     except Exception as e:
