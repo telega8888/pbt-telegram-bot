@@ -53,7 +53,10 @@ class Survey(StatesGroup):
 @dp.message_handler(commands=["start"], state="*")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.finish()
-    await message.answer("Welcome! Let's endorse the Plant Based Treaty.\n\nFirst Name:")
+    await message.answer(
+        "Welcome! Let's endorse the Plant Based Treaty.\n\n"
+        "First Name:"
+    )
     await Survey.first_name.set()
 
 @dp.message_handler(state=Survey.first_name)
@@ -86,11 +89,11 @@ async def step_city(message: types.Message, state: FSMContext):
     data = await state.get_data()
     try:
         sheet.append_row([
-            data.get("first_name",""),
-            data.get("last_name",""),
-            data.get("email",""),
-            data.get("country",""),
-            data.get("city","")
+            data.get("first_name", ""),
+            data.get("last_name", ""),
+            data.get("email", ""),
+            data.get("country", ""),
+            data.get("city", "")
         ])
         await message.answer("✅ Thank you for endorsing the Plant Based Treaty!")
     except Exception:
@@ -105,7 +108,7 @@ async def unknown_message(message: types.Message):
 # ——— Webhook lifecycle ——————————————————————————————————
 async def on_startup(app: web.Application):
     logging.info("Setting webhook...")
-    # удаляем старые апдейты и ставим новый webhook
+    # удаляем старые апдейты и ставим новый webhook с очисткой очереди
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
     logging.info("Webhook set to %s", WEBHOOK_URL)
@@ -117,12 +120,11 @@ async def on_shutdown(app: web.Application):
     await dp.storage.wait_closed()
 
 # ——— Создаём aiohttp-приложение через Aiogram-хелпер ——————————
-app = get_new_configured_app(
-    dispatcher=dp,
-    path="/webhook",
-    on_startup=on_startup,
-    on_shutdown=on_shutdown,
-)
+app = get_new_configured_app(dispatcher=dp, path="/webhook")
+
+# Подключаем lifecycle handlers
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
 
 # ——— Добавляем healthcheck для Render —————————————————————————
 async def ping(request: web.Request):
